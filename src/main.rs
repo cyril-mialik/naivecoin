@@ -1,41 +1,73 @@
-mod blockchain;
-mod http_server;
-mod network;
+use naivecoin::{Blockchain, DIFFICULTY, Transaction};
+use std::time::Instant;
 
-use blockchain::Blockchain;
-use http_server::start_server;
-use network::P2PNetwork;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+fn main() {
+    println!("{}", "=".repeat(60));
+    println!(
+        "{:^60}",
+        format!("SIMPLE BITCOIN v{}", naivecoin::VERSION)
+    );
+    println!("{}", "=".repeat(60));
+    println!("Mining Difficulty: {} leading zeros\n", DIFFICULTY);
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    println!("🚀 Starting Minimal Blockchain Node");
-    println!("===================================");
+    let mut blockchain = Blockchain::new();
+    println!("✅ Genesis block created");
+    println!("   Hash: {}", blockchain.get_last_block().hash);
+    println!("   Index: {}\n", blockchain.get_last_block().index);
 
-    // Создаем блокчейн
-    let blockchain = Arc::new(Mutex::new(Blockchain::new()));
+    println!("{}", "-".repeat(60));
+    println!("📝 Adding transactions...");
+    println!("{}", "-".repeat(60));
 
-    // Запускаем HTTP сервер
-    let http_port = 3001;
-    let blockchain_http = blockchain.clone();
-    tokio::spawn(async move {
-        start_server(http_port, blockchain_http).await;
-    });
+    let transactions = vec![
+        ("genesis", "alice", 1000),
+        ("alice", "bob", 300),
+        ("alice", "charlie", 200),
+        ("bob", "charlie", 100),
+        ("genesis", "dave", 500),
+        ("dave", "alice", 200),
+    ];
 
-    // Запускаем P2P WebSocket сервер
-    let p2p_port = 6001;
-    let blockchain_p2p = blockchain.clone();
-    let _network = P2PNetwork::new(p2p_port, blockchain_p2p).await;
+    for (from, to, amount) in transactions {
+        let start = Instant::now();
+        let tx = Transaction::new(from, to, amount);
 
-    println!("✅ Node started successfully!");
-    println!("📡 HTTP API: http://localhost:{}", http_port);
-    println!("🌐 WebSocket: ws://localhost:{}", p2p_port);
-    println!("===================================");
-    println!("Press Ctrl+C to stop...");
+        match blockchain.add_transaction(tx) {
+            Ok(_) => {
+                let duration = start.elapsed();
+                let last_block = blockchain.get_last_block();
+                println!(
+                    "✅ {} → {}: {} coins (Block #{})",
+                    from, to, amount, last_block.index
+                );
+                println!("   Hash: {}...", &last_block.hash[..20]);
+                println!("   Nonce: {}", last_block.nonce);
+                println!("   Time: {:?}\n", duration);
+            }
+            Err(e) => {
+                println!("❌ Failed: {} → {}: {}", from, to, e);
+            }
+        }
+    }
 
-    // Ждем бесконечно
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+    let stats = blockchain.get_stats();
+    println!("\n{}", stats);
+
+    println!("{}", "=".repeat(60));
+    println!("📈 Additional Information:");
+    println!("   All addresses: {:?}", blockchain.get_all_addresses());
+    println!("   Genesis block hash: {}", blockchain.chain[0].hash);
+    println!("   Last block hash: {}", blockchain.get_last_block().hash);
+    println!("   Chain validated: {}", blockchain.validate_chain());
+    println!("{}", "=".repeat(60));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_main_demo() {
+        main();
     }
 }
